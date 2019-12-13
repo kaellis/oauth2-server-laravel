@@ -15,6 +15,8 @@ use Carbon\Carbon;
 use League\OAuth2\Server\Entity\AccessTokenEntity;
 use League\OAuth2\Server\Entity\ScopeEntity;
 use League\OAuth2\Server\Storage\AccessTokenInterface;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /**
  * This is the fluent access token class.
@@ -23,6 +25,7 @@ use League\OAuth2\Server\Storage\AccessTokenInterface;
  */
 class FluentAccessToken extends AbstractFluentAdapter implements AccessTokenInterface
 {
+    const CACHE_KEY_PREFIX = "FluentAccessToken|";
     /**
      * Get an instance of Entities\AccessToken.
      *
@@ -32,13 +35,20 @@ class FluentAccessToken extends AbstractFluentAdapter implements AccessTokenInte
      */
     public function get($token)
     {
-        $result = $this->getConnection()->table('oauth_access_tokens')
-                ->where('oauth_access_tokens.id', $token)
-                ->first();
-
-        if (is_null($result)) {
-            return;
-        }
+	$result = \Cache::get(CACHE_KEY_PREFIX . $token);
+	if (!$result) {
+	        $result = $this->getConnection()->table('oauth_access_tokens')
+        	        ->where('oauth_access_tokens.id', $token)
+                	->first();
+		if (is_null($result)) {
+		   // no point putting null value into cache 
+		   return;
+		}
+		Log::info("OAuth access token found, caching");
+		\Cache::put(CACHE_KEY_PREFIX . $token, $result, 120);
+	} else {
+	    Log::info("OAuth access token found in cache");
+	}
 
         return (new AccessTokenEntity($this->getServer()))
                ->setId($result->id)

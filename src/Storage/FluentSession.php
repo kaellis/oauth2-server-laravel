@@ -17,6 +17,8 @@ use League\OAuth2\Server\Entity\AuthCodeEntity;
 use League\OAuth2\Server\Entity\ScopeEntity;
 use League\OAuth2\Server\Entity\SessionEntity;
 use League\OAuth2\Server\Storage\SessionInterface;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /**
  * This is the fluent session class.
@@ -25,6 +27,7 @@ use League\OAuth2\Server\Storage\SessionInterface;
  */
 class FluentSession extends AbstractFluentAdapter implements SessionInterface
 {
+    const CACHE_KEY_PREFIX = "OAuth.FluentSession|";
     /**
      * Get a session from it's identifier.
      *
@@ -56,15 +59,22 @@ class FluentSession extends AbstractFluentAdapter implements SessionInterface
      */
     public function getByAccessToken(AccessTokenEntity $accessToken)
     {
-        $result = $this->getConnection()->table('oauth_sessions')
-                ->select('oauth_sessions.*')
-                ->join('oauth_access_tokens', 'oauth_sessions.id', '=', 'oauth_access_tokens.session_id')
-                ->where('oauth_access_tokens.id', $accessToken->getId())
-                ->first();
-
-        if (is_null($result)) {
-            return;
-        }
+	$result = \Cache::get(CACHE_KEY_PREFIX . $accessToken->getId());
+	if (!$result) {
+	        $result = $this->getConnection()->table('oauth_sessions')
+        	        ->select('oauth_sessions.*')
+                	->join('oauth_access_tokens', 'oauth_sessions.id', '=', 'oauth_access_tokens.session_id')
+               		->where('oauth_access_tokens.id', $accessToken->getId())
+                	->first();
+		if (is_null($result)) {
+		   // no point putting null value into cache
+		   return;
+		}
+		Log::info("OAuth access token found, caching");
+		\Cache::put(CACHE_KEY_PREFIX . $accessToken->getId(), $result, 120);
+	} else {
+	    Log::info("OAuth access token found in cache");
+	}
 
         return (new SessionEntity($this->getServer()))
                ->setId($result->id)
